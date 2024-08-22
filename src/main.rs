@@ -3,17 +3,21 @@ extern crate rayon;
 extern crate indicatif;
 
 use glob::glob;
-use std::{error::Error, process::{Command, Stdio}, env};
+use std::{error::Error, process::{Command, Stdio}, env, fs};
 use indicatif::ParallelProgressIterator;
 use rayon::iter::{ParallelIterator, IntoParallelRefIterator};
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Set the root directory
+    let current_path=env::current_dir().unwrap();
+    let mut root_dir;
+    let binding = String::from(current_path.to_string_lossy());
+    root_dir = &binding;
     let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        return Err("expected one argument: the root directory".into());
+    if args.len() != 1 {
+        //return Err("expected one argument: the root directory".into());
+        root_dir = &args[1];
     }
-    let root_dir = &args[1];
 
     // Find all wav files in the root directory and its subdirectories
     let flac_paths: Vec<_> = glob(&format!("{}/**/*.flac", root_dir))?
@@ -36,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         // Get the path to the opus file
         let opus_path = flac_path.with_extension("opus");
 
-        // Use ffmpeg to convert the flac file to opus
+        // Use opusenc to convert the flac file to opus
         let status = Command::new("opusenc")
             .arg("--vbr")
             .arg("--bitrate")
@@ -50,8 +54,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             .status()
             .unwrap();
 
+        fs::remove_file(flac_path).unwrap();
+
         if !status.success() {
-            panic!("ffmpeg failed with status {}", status);
+            panic!("opusenc failed with status {}", status);
         }
     });
 
