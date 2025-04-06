@@ -2,14 +2,28 @@ use rayon::prelude::*;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use indicatif::{ProgressBar, ProgressStyle};
+
+const BAR_TEMPLATE: &str = "{elapsed_precise:>8} | {binary_bytes_per_sec:<12} [{bar:40.red}] {bytes:>10} / {total_bytes:<10} {msg}";
+const BAR_CHARS: &str = "=> ";
 
 fn main() {
     let current_dir = std::env::current_dir().unwrap();
     let flac_files = find_flac_files(&current_dir);
+    let total_files = flac_files.len() as u64;
+    println!("Found {} flac files.", total_files);
+
+    let pb = ProgressBar::new(total_files);
+    pb.set_style(ProgressStyle::with_template(BAR_TEMPLATE).unwrap().progress_chars(BAR_CHARS));
+
+           // .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+
 
     flac_files.par_iter().for_each(|flac_file| {
         convert_to_opus(flac_file);
+        pb.inc(1);
     });
+    pb.finish_with_message("Conversion complete");
 }
 
 fn find_flac_files(dir: &Path) -> Vec<String> {
@@ -46,8 +60,8 @@ fn convert_to_opus(flac_file: &str) {
         .expect("Failed to execute opusenc");
 
     if status.success() {
-        println!("Successfully converted {}", flac_file);
-        fs::remove_file(flac_file).unwrap();
+        //println!("Successfully converted {}", flac_file);
+        //fs::remove_file(flac_file).unwrap();
     } else {
         eprintln!("Failed to convert {}", flac_file);
     }
