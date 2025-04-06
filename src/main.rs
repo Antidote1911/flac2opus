@@ -16,14 +16,25 @@ fn main() {
     let pb = ProgressBar::new(total_files);
     pb.set_style(ProgressStyle::with_template(BAR_TEMPLATE).unwrap().progress_chars(BAR_CHARS));
 
-           // .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
-
-
-    flac_files.par_iter().for_each(|flac_file| {
-        convert_to_opus(flac_file);
-        pb.inc(1);
-    });
+    let failed_files: Vec<String> = flac_files.par_iter()
+        .filter_map(|flac_file| {
+            let success = convert_to_opus(flac_file);
+            pb.inc(1);
+            if success {
+                None
+            } else {
+                Some(flac_file.clone())
+            }
+        })
+        .collect();
     pb.finish_with_message("Conversion complete");
+
+    if !failed_files.is_empty() {
+        println!("Failed to convert the following files:");
+        for file in failed_files {
+            println!("{}", file);
+        }
+    }
 }
 
 fn find_flac_files(dir: &Path) -> Vec<String> {
@@ -44,7 +55,7 @@ fn find_flac_files(dir: &Path) -> Vec<String> {
     flac_files
 }
 
-fn convert_to_opus(flac_file: &str) {
+fn convert_to_opus(flac_file: &str) -> bool {
     let output_file = flac_file.replace(".flac", ".opus");
     let status = Command::new("opusenc")
         .arg("--vbr")
@@ -59,10 +70,5 @@ fn convert_to_opus(flac_file: &str) {
         .status()
         .expect("Failed to execute opusenc");
 
-    if status.success() {
-        //println!("Successfully converted {}", flac_file);
-        //fs::remove_file(flac_file).unwrap();
-    } else {
-        eprintln!("Failed to convert {}", flac_file);
-    }
+    status.success()
 }
