@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::Mutex;
 
 const BAR_TEMPLATE: &str = "{elapsed_precise:>8} | {binary_bytes_per_sec:<12} [{bar:40.red}] {bytes:>10} / {total_bytes:<10} {msg}";
 const BAR_CHARS: &str = "=> ";
@@ -16,19 +17,19 @@ fn main() {
     let pb = ProgressBar::new(total_files);
     pb.set_style(ProgressStyle::with_template(BAR_TEMPLATE).unwrap().progress_chars(BAR_CHARS));
 
-    let failed_files: Vec<String> = flac_files.par_iter()
-        .filter_map(|flac_file| {
-            let success = convert_to_opus(flac_file);
-            pb.inc(1);
-            if success {
-                None
-            } else {
-                Some(flac_file.clone())
-            }
-        })
-        .collect();
+    let failed_files = Mutex::new(Vec::new());
+
+    flac_files.par_iter().for_each(|flac_file| {
+        if !convert_to_opus(flac_file) {
+            failed_files.lock().unwrap().push(flac_file.clone());
+        }
+        pb.inc(1);
+        fs::remove_file(flac_file).unwrap();
+    });
+
     pb.finish_with_message("Conversion complete");
 
+    let failed_files = failed_files.into_inner().unwrap();
     if !failed_files.is_empty() {
         println!("Failed to convert the following files:");
         for file in failed_files {
