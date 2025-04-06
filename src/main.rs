@@ -1,65 +1,54 @@
-extern crate glob;
-extern crate rayon;
-extern crate indicatif;
+use rayon::prelude::*;
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Stdio};
 
-use glob::glob;
-use std::{error::Error, process::{Command, Stdio}, env, fs};
-use indicatif::ParallelProgressIterator;
-use rayon::iter::{ParallelIterator, IntoParallelRefIterator};
+fn main() {
+    let current_dir = std::env::current_dir().unwrap();
+    let flac_files = find_flac_files(&current_dir);
 
-fn main() -> Result<(), Box<dyn Error>> {
-    // Set the root directory
-    let current_path=env::current_dir().unwrap();
-    let mut root_dir;
-    let binding = String::from(current_path.to_string_lossy());
-    root_dir = &binding;
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 1 {
-        //return Err("expected one argument: the root directory".into());
-        root_dir = &args[1];
-    }
-
-    // Find all wav files in the root directory and its subdirectories
-    let flac_paths: Vec<_> = glob(&format!("{}/**/*.flac", root_dir))?
-        .filter_map(Result::ok)
-        .collect();
-
-    println!("Found {} flac files", flac_paths.len());
-
-    // filter out the flac files that already have an opus file
-    let flac_paths: Vec<_> = flac_paths
-        .iter()
-        .filter(|flac_path| {
-            let opus_path = flac_path.with_extension("opus");
-            !opus_path.exists()
-        })
-        .collect();
-
-    // Process the wav files in parallel
-    flac_paths.par_iter().progress_count(flac_paths.len() as u64).for_each(|flac_path| {
-        // Get the path to the opus file
-        let opus_path = flac_path.with_extension("opus");
-
-        // Use opusenc to convert the flac file to opus
-        let status = Command::new("opusenc")
-            .arg("--vbr")
-            .arg("--bitrate")
-            .arg("320")
-            .arg("--comment")
-            .arg("comment=Encodage VBR OPUS 320 kbps by Antidote")
-            .arg(flac_path)
-            .arg(opus_path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .unwrap();
-
-        fs::remove_file(flac_path).unwrap();
-
-        if !status.success() {
-            panic!("opusenc failed with status {}", status);
-        }
+    flac_files.par_iter().for_each(|flac_file| {
+        convert_to_opus(flac_file);
     });
+}
 
-    Ok(())
+fn find_flac_files(dir: &Path) -> Vec<String> {
+    let mut flac_files = Vec::new();
+    if dir.is_dir() {
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_dir() {
+                flac_files.extend(find_flac_files(&path));
+            } else if let Some(extension) = path.extension() {
+                if extension == "flac" {
+                    flac_files.push(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    flac_files
+}
+
+fn convert_to_opus(flac_file: &str) {
+    let output_file = flac_file.replace(".flac", ".opus");
+    let status = Command::new("opusenc")
+        .arg("--vbr")
+        .arg("--bitrate")
+        .arg("320")
+        .arg("--comment")
+        .arg("comment=Encodage VBR OPUS 320 kbps by Antidote")
+        .arg(flac_file)
+        .arg(&output_file)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("Failed to execute opusenc");
+
+    if status.success() {
+        println!("Successfully converted {}", flac_file);
+        fs::remove_file(flac_file).unwrap();
+    } else {
+        eprintln!("Failed to convert {}", flac_file);
+    }
 }
