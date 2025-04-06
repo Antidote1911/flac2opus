@@ -20,11 +20,12 @@ fn main() {
     let failed_files = Mutex::new(Vec::new());
 
     flac_files.par_iter().for_each(|flac_file| {
-        if !convert_to_opus(flac_file) {
+        if convert_to_opus(flac_file) {
+            fs::remove_file(flac_file).unwrap();
+        } else {
             failed_files.lock().unwrap().push(flac_file.clone());
         }
         pb.inc(1);
-        fs::remove_file(flac_file).unwrap();
     });
 
     pb.finish_with_message("Conversion complete");
